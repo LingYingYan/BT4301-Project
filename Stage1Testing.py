@@ -9,8 +9,11 @@ from torch.utils.data import DataLoader
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import precision_score
 from tqdm import tqdm
-from sklearn.metrics import classification_report
+from sklearn.metrics import classification_report, precision_score, recall_score, f1_score
+import mlflow
+import mlflow.pytorch
 
+mlflow.set_tracking_uri("http://localhost:5000")
 
 df_test_x = pd.read_csv('X_test.csv')
 df_test_y = pd.read_csv('y_test.csv')
@@ -103,24 +106,40 @@ model.to(device)
 predictions = []
 true_labels = []
 
-with torch.no_grad():
-    test_loop = tqdm(test_loader, desc="Testing", leave=True)
-    for batch in test_loop:
-        input_ids = batch['input_ids'].to(device)
-        attention_mask = batch['attention_mask'].to(device)
-        struct_feats = batch['structured'].to(device)
-        labels_batch = batch['labels'].to(device)
+with mlflow.start_run(run_name="Testing"):
+    with torch.no_grad():
+        test_loop = tqdm(test_loader, desc="Testing", leave=True)
+        for batch in test_loop:
+            input_ids = batch['input_ids'].to(device)
+            attention_mask = batch['attention_mask'].to(device)
+            struct_feats = batch['structured'].to(device)
+            labels_batch = batch['labels'].to(device)
 
-        outputs = model(input_ids=input_ids, attention_mask=attention_mask, struct_feats=struct_feats)
-        preds = torch.argmax(outputs, dim=1)
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, struct_feats=struct_feats)
+            preds = torch.argmax(outputs, dim=1)
 
-        predictions.extend(preds.cpu().numpy())
-        true_labels.extend(labels_batch.cpu().numpy())
+            predictions.extend(preds.cpu().numpy())
+            true_labels.extend(labels_batch.cpu().numpy())
+        
+        print("length of preds: ",len(predictions))
+        print("length of true_labels: ",len(true_labels))
+    # ✅ Log metrics to MLflow
+    precision = precision_score(true_labels, predictions, average=None)
+    recall = recall_score(true_labels, predictions, average=None)
+    f1 = f1_score(true_labels, predictions, average=None)
 
-# Evaluate
-print("Classification Report:")
-print(classification_report(true_labels, predictions, target_names=['fake', 'genuine']))
+    print("\n📊 Test Metrics:")
+    print(f"Precision: {precision}")
+    print(f"Recall   : {recall}")
+    print(f"F1-score : {f1}")
 
+    mlflow.log_metric("test_precision_Fake", float(precision[0]))
+    mlflow.log_metric("test_precision_Genuine", float(precision[1]))
+    mlflow.log_metric("test_recall_Fake", float(recall[0]))
+    mlflow.log_metric("test_recall_Genuine", float(recall[1]))
+    mlflow.log_metric("test_f1_Fake", float(f1[0]))
+    mlflow.log_metric("test_f1_Genuine", float(f1[1]))
 
-df_test['predicted_label'] = predictions
-df_test.to_csv("test_results.csv", index=False)
+# predict and output to csv if needed
+# df_test['predicted_label'] = predictions
+# df_test.to_csv("test_results.csv", index=False)

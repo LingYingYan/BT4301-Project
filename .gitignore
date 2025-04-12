@@ -1,5 +1,4 @@
 __pycache__/
 *.xlsx
-*.csv
 *.ipynb_checkpoints
 Stage1Model.pt

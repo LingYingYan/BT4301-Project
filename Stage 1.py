@@ -14,10 +14,19 @@ import mlflow
 import mlflow.pytorch
 
 
+print(torch.cuda.is_available())
+print(torch.cuda.get_device_name(0))
+
+mlflow.set_tracking_uri("http://localhost:5000")
+
 pd.set_option('display.max_columns', None)
 df_X = pd.read_csv('X_train.csv')
 df_y = pd.read_csv('y_train.csv')
 df = pd.concat([df_X, df_y], axis=1)
+
+# for debugging purpose, use smaller dateset
+# df = df.sample(n=500, random_state=42)
+
 df['label'] = df['label'].map({'OR': 1, 'CG': 0})
 
 # Boolean columns change to 0/1
@@ -114,11 +123,12 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 model = HybridModel(struct_feat_dim=struct_train.shape[1])
 model.to(device)
 
-optimizer = AdamW(model.parameters(), lr=2e-5)
-criterion = nn.CrossEntropyLoss(weight=torch.tensor([0.5, 2.0]).to(device))
+num_epochs = 3 # init 3, for dubugging purpose, reduce to 1
+batch_size = 32 # init 16, for debugging purpose, increase to 32
+learning_rate = 5e-5 # init 2e-5, for debugging purpose, increase to 1e-4
 
-num_epochs = 3
-
+optimizer = AdamW(model.parameters(), lr=learning_rate)
+criterion = nn.CrossEntropyLoss(weight=torch.tensor([1.0, 1.6]).to(device))
 
 # DEBUGGING
 for i, batch in enumerate(train_loader):
@@ -126,11 +136,13 @@ for i, batch in enumerate(train_loader):
     if i > 5:
         break
 
-with mlflow.start_run():
+with mlflow.start_run(run_name="Stage 1 Hybrid Model Trail 1"):
     mlflow.log_param("model_type", "Hybrid")
     mlflow.log_param("epochs", num_epochs)
-    mlflow.log_param("batch_size", 16)
+    mlflow.log_param("batch_size", batch_size)
     mlflow.log_param("learning_rate", 2e-5)
+    mlflow.log_param("test_param", 123)
+    mlflow.log_metric("test_metric", 0.85)
 
     for epoch in range(num_epochs):
         model.train()
@@ -193,8 +205,11 @@ with mlflow.start_run():
 
 
     # Log metrics
-    mlflow.log_metric("val_precision", precision)
-    mlflow.log_metric("val_recall", recall)
-    mlflow.log_metric("val_f1", f1)
+    mlflow.log_metric("val_precision_Fake", float(precision[0]))
+    mlflow.log_metric("val_precision_Genuine", float(precision[1]))
+    mlflow.log_metric("val_recall_Fake", float(recall[0]))
+    mlflow.log_metric("val_recall_Genuine", float(recall[1]))
+    mlflow.log_metric("val_f1_Fake", float(f1[0]))
+    mlflow.log_metric("val_f1_Genuine", float(f1[1]))
     # Log the model
     mlflow.pytorch.log_model(model, "Stage1Model")
